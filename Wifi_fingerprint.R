@@ -1,4 +1,3 @@
-
 ######################## WiFi Locationing ###############
 
 #### Libraries ####
@@ -13,45 +12,52 @@ pacman::p_load("readr","ggplot2","dplyr","lubridate","plotly","scatterplot3d", "
 
 ######################## Upload file and set seed ####
 set.seed(123)
-Train <-read_csv("trainingData.csv")
-Valid <- read_csv("validationData.csv")
 
-##Training data
-##Observations: 19,937
-## Variables: 529
+# Import Data
+#### Ignacio: Emma, avoid making use of this approach as it is computer dependant
+#### In other words, this will not work into another computer as the new computer
+#### doesn't need to have the same OS and same folder tree.
+#### You can use the function "list.files", and then use the function "grep"
+#### to look for your script.
 
-##Valid data
-##Observations: 1,111
-## Variables: 529
+loc   <- grep("Wifi_fingerprint.R",list.files(recursive=TRUE),value=TRUE)
+iloc  <- which(unlist(gregexpr("/Wifi_fingerprint.R$",loc)) != -1)
+myloc <- paste(getwd(),loc[iloc],sep="/")
+setwd(substr(myloc,1,nchar(myloc)-nchar("Wifi_fingerprint.R")))
 
-#Distinct rows in order to only keep unique rows (rows with active WAP)
-Train <- dplyr::distinct(Train) # Observations: 19,937 to 19,300
-Valid <- dplyr::distinct(Valid) # Observations: 1,111 to 1,111
 
-#Combinde train and valid data
-AllData <- rbind (Train, Valid)
-
-################ Change columns into suiting data types ####
-AllData$BUILDINGID<-as.factor(AllData$BUILDINGID)
-AllData$FLOOR <- as.factor(AllData$FLOOR)
-
-#################################### Take away low activity WAPs (lower than 3%) #####
-k1 <- nearZeroVar(AllData[,1:520],uniqueCut = 0.03, saveMetrics = TRUE, allowParallel = TRUE)
-AllData <- AllData[,- which(k1$nzv==T)]
-#Observations: 20,411 
-#Variables: 400
-
-############################ Delete variables that will not be used ####
-DeleteVar <- c("SPACEID", "RELATIVEPOSITION", "USERID", "PHONEID", "TIMESTAMP")
-for (i in DeleteVar) {
-  AllData[,DeleteVar] <- NULL }
+#### Ignacio: Check if the file exists in the folder. However, this chunk
+#### of code should be at the beggining of your script.
+if (file.exists("All.Data.csv")) {
+  ReadyData <-read_csv("All.Data.csv")
+} else{
+  # Load data
+  #Distinct rows in order to only keep unique rows (rows with active WAP)
+  Train <- dplyr::distinct(Train) # Observations: 19,937 to 19,300
+  Valid <- dplyr::distinct(Valid) # Observations: 1,111 to 1,111
   
-#Observations: 20,411
-#Variables: 395
+  #### Ignacio: Emma, you should justify the need of doing that.
+  #Combinde train and valid data
+  AllData <- rbind (Train, Valid)
+  
+  ################ Change columns into suiting data types ####
+  AllData$BUILDINGID<-as.factor(AllData$BUILDINGID)
+  AllData$FLOOR <- as.factor(AllData$FLOOR)
+  
+  #################################### Take away low activity WAPs (lower than 3%) #####
+  k1 <- nearZeroVar(AllData[,1:520],uniqueCut = 0.03, saveMetrics = TRUE, allowParallel = TRUE)
+  AllData <- AllData[,- which(k1$nzv==T)]
+  #Observations: 20,411 
+  #Variables: 400
+  
+  ############################ Delete variables that will not be used ####
+  DeleteVar <- c("SPACEID", "RELATIVEPOSITION", "USERID", "PHONEID", "TIMESTAMP")
+  for (i in DeleteVar) {AllData[,DeleteVar] <- NULL }
+  
+  write.csv(AllData, file = "All.Data.csv", row.names = F)
+}
 
-#####Save file ####
-write.csv(AllData, file = "All.Data.csv", row.names = F)
-ReadyData <-read_csv("All.Data.csv")
+ReadyData <- AllData
 
 ########################################################### Handle WAPs ####
 
@@ -90,16 +96,19 @@ Data$LOCATION <- as.factor (Data$LOCATION)
 #Create variable with highest WAP vaule
 new_data <- Data[,1:391] 
 
-row <- c()
-for (i in 1:nrow(new_data)){
-  a <- new_data[i, which.max(new_data[i,])]
-  row <- c(a, row)
-  print(i)
-}
+# row <- c()
+# for (i in 1:nrow(new_data)){
+#   a <- new_data[i, which.max(new_data[i,])]
+#   row <- c(a, row)
+#   print(i)
+# }
 
 #Add new column with max value of WAPs
-Data$MAX <- row
+#Data$MAX <- row
+#### Ignacio: Much faster way
+Data$MAX <- apply(new_data,1,which.max)
 
+#### Ignacio: Min-max scaling
 ## Create simplyfied latitude and longitude
 new_long <- Data$LONGITUDE - min(Data$LONGITUDE)
 Data$LONGITUDE <- round(new_long, digits = 1)
@@ -107,7 +116,7 @@ new_lat <- Data$LATITUDE - min(Data$LATITUDE)
 Data$LATITUDE <- round(new_lat, digits = 1)
 longlat <- cbind(new_long, new_lat)
 
-#### Save DF reday for models ####
+#### Save DF ready for models ####
 write.csv(Data, file ="Data_4_models.csv", row.names = F)
 Model_data<-read.csv("Data_4_models.csv")
 
@@ -122,15 +131,20 @@ registerDoParallel(Cluster)
 
 ########################################### Split data 
 set.seed(123)
-inTrain<- createDataPartition(y = Model_data$BUILDINGID, p = 0.6, t=3,list = FALSE)
-trainSet <- Model_data [inTrain,]
-test_valid<- Model_data[-inTrain,]
+inTrain    <- createDataPartition(y = Model_data$BUILDINGID, p = 0.6, t=3,list = FALSE)
+trainSet   <- Model_data[inTrain,]
+test_valid <- Model_data[-inTrain,]
 
-smp_siz = floor(0.5*nrow(test_valid))
-test_ind = sample(seq_len(nrow(test_valid)), size = smp_siz) 
+# smp_siz <- floor(0.5*nrow(test_valid))
+# test_ind <- sample(seq_len(nrow(test_valid)), size = smp_siz) 
 
-testSet = test_valid[test_ind,] 
-validSet =test_valid[-test_ind,]  
+#### Ignacio: Emma, avoid making use of the "sample" function as it doesn't
+#### respect the underlying distribution of your data.
+
+test_ind <- createDataPartition(test_valid$BUILDINGID, p = 0.5, list = FALSE)
+
+testSet  <- test_valid[test_ind,] 
+validSet <- test_valid[-test_ind,]  
 
 ################################################################ SVM ####
 set.seed(123)
@@ -140,7 +154,7 @@ system.time(svm_building <- svm(BUILDINGID ~ .-FLOOR -LOCATION -LONGITUDE -LATIT
 svm_building
 
 #Test the svm model
-svm_building_pred <- predict(svm_building, newdata=testSet)
+svm_building_pred  <- predict(svm_building, newdata=testSet)
 svm_building_predV <- predict(svm_building, newdata=validSet)
 
 # Confusion Matrix
@@ -148,7 +162,11 @@ print(svm_building_cm <- confusionMatrix (svm_building_pred, testSet$BUILDINGID)
 print(svm_building_cmV <- confusionMatrix (svm_building_predV, validSet$BUILDINGID))
 
 #Save model
-saveRDS(svm_building,"C:/Users/46768/Documents/Dota/Wi-Fi position/SVM_Building_Model.rds")
+#### Ignacio: Emma, try to be more organized.
+dir.create(file.path(getwd(), "models"), showWarnings = FALSE)
+setwd(file.path(getwd(), "models"))
+
+saveRDS(svm_building,"SVM_Building_Model.rds")
 
 ################################################################ Ranger (Random Forest)
 set.seed(123)
@@ -165,22 +183,30 @@ ranger_building_predV <- predict(ranger_building, validSet)
 ranger_table_building<-table(testSet$BUILDINGID, ranger_building_pred$predictions)
 print(ranger_building_cm<-(confusionMatrix(ranger_table_building)))
 
-ranger_table_buildingV<-table(validSet$BUILDINGID, ranger_building_predV$predictions)
-print(ranger_buildingV_cmV<-(confusionMatrix(ranger_table_buildingV)))
+#ranger_table_buildingV<-table(validSet$BUILDINGID, ranger_building_predV$predictions)
+ranger_buildingV_cmV <- confusionMatrix(ranger_building_predV$predictions,validSet$BUILDINGID)
+print(ranger_buildingV_cmV)
 
-saveRDS(ranger_building,"C:/Users/46768/Documents/Dota/Wi-Fi position/Ranger_Building_Model.rds")
+#saveRDS(ranger_building,"C:/Users/46768/Documents/Dota/Wi-Fi position/Ranger_Building_Model.rds")
+saveRDS(ranger_building,"Ranger_Building_Model.rds")
 
 ################################################################################## FLOOR #####
 
 ######################################### Split data 
 set.seed(123)
-inTrainFloor<- createDataPartition(y = Model_data$LOCATION, p = 0.6, t=3, list = FALSE)
-trainSet <- Model_data [inTrainFloor,]
-test_valid<- Model_data[-inTrainFloor,]
+inTrainFloor <- createDataPartition(y = Model_data$LOCATION, p = 0.6, t=3, list = FALSE)
+trainSet     <- Model_data [inTrainFloor,]
+test_valid   <- Model_data[-inTrainFloor,]
+
+#### Ignacio: Emma, avoid making use of the "sample" function as it doesn't
+#### respect the underlying distribution of your data.
 
 set.seed(123)
-smp_siz = floor(0.5*nrow(test_valid))
-test_ind = sample(seq_len(nrow(test_valid)), size = smp_siz) 
+test_ind <- createDataPartition(test_valid$LOCATION, p = 0.5, list = FALSE)
+
+# set.seed(123)
+# smp_siz = floor(0.5*nrow(test_valid))
+# test_ind = sample(seq_len(nrow(test_valid)), size = smp_siz) 
 
 testSet = test_valid[test_ind,] 
 validSet =test_valid[-test_ind,]  
