@@ -5,6 +5,8 @@ if(require("pacman")=="FALSE"){
   install.packages("pacman")
 }
 
+#### Ignacio: This is to clean the user's environment
+rm(list = ls(all = TRUE))
 pacman::p_load("readr","ggplot2","dplyr","lubridate","plotly","scatterplot3d", "caret", "DMwR", "class", "e1071", 
                "caretEnsemble", "C50", "ISLR", "base", "randomForest", "stats", "ranger", "Metrics", "kknn", "gbm", 
                "ggpubr","gridExtra", "mlbench", "rayshader", "reshape2", "xgboost", "doParallel", "tidyverse","tidyr",
@@ -32,13 +34,16 @@ if (file.exists("All.Data.csv")) {
   ReadyData <-read_csv("All.Data.csv")
 } else{
   # Load data
+  Train <-read_csv("trainingData.csv")
+  Valid <- read_csv("validationData.csv")
+  
   #Distinct rows in order to only keep unique rows (rows with active WAP)
   Train <- dplyr::distinct(Train) # Observations: 19,937 to 19,300
   Valid <- dplyr::distinct(Valid) # Observations: 1,111 to 1,111
   
   #### Ignacio: Emma, you should justify the need of doing that.
   #Combinde train and valid data
-  AllData <- rbind (Train, Valid)
+  AllData <- rbind(Train, Valid)
   
   ################ Change columns into suiting data types ####
   AllData$BUILDINGID<-as.factor(AllData$BUILDINGID)
@@ -58,6 +63,8 @@ if (file.exists("All.Data.csv")) {
 }
 
 ReadyData <- AllData
+#### Ignacio: Delete unneded dataframes to save memory
+rm(AllData)
 
 ########################################################### Handle WAPs ####
 
@@ -90,8 +97,13 @@ Data$BUILDINGID <- as.factor (Data$BUILDINGID)
 Data$FLOOR <- as.factor (Data$FLOOR)
 
 ##Create LOCATION variable
-Data$LOCATION <- with(Data, interaction(BUILDINGID, FLOOR, drop = T))
-Data$LOCATION <- as.factor (Data$LOCATION)
+#### Ignacio: Emma, use this approach to prevent later problems. When you save
+#### your data into a file, R doesn't save the variable type. Therefore, if
+#### the separator is a "dot" when R reads back the file, will consider "0.0"
+#### as "0", instead of a factor. 
+#Data$LOCATION <- with(Data, interaction(BUILDINGID, FLOOR, drop = T))
+Data$LOCATION <- paste(Data$BUILDINGID,Data$FLOOR,sep = "_")
+Data$LOCATION <- as.factor(Data$LOCATION)
 
 #Create variable with highest WAP vaule
 new_data <- Data[,1:391] 
@@ -117,16 +129,21 @@ Data$LATITUDE <- round(new_lat, digits = 1)
 longlat <- cbind(new_long, new_lat)
 
 #### Save DF ready for models ####
-write.csv(Data, file ="Data_4_models.csv", row.names = F)
-Model_data<-read.csv("Data_4_models.csv")
+if (!file.exists("Data_4_models.csv")) {
+  write.csv(Data, file ="Data_4_models.csv", row.names = F)
+}
 
-Model_data$LOCATION <-as.factor(Model_data$LOCATION)
-Model_data$BUILDINGID <-as.factor(Model_data$BUILDINGID)
-Model_data$FLOOR <-as.factor(Model_data$FLOOR)
+Model_data<-read.csv("Data_4_models.csv")
+#### Ignacio: Emma, free memory!!!
+rm(Data)
+
+Model_data$LOCATION   <- as.factor(Model_data$LOCATION)
+Model_data$BUILDINGID <- as.factor(Model_data$BUILDINGID)
+Model_data$FLOOR      <- as.factor(Model_data$FLOOR)
 ############################################### Models #############################################
 
-Cluster <- makeCluster(5)
-registerDoParallel(Cluster)
+# Cluster <- makeCluster(5)
+# registerDoParallel(Cluster)
 ################################################################################## BUILDING ####
 
 ########################################### Split data 
@@ -163,10 +180,16 @@ print(svm_building_cmV <- confusionMatrix (svm_building_predV, validSet$BUILDING
 
 #Save model
 #### Ignacio: Emma, try to be more organized.
-dir.create(file.path(getwd(), "models"), showWarnings = FALSE)
-setwd(file.path(getwd(), "models"))
+if (!dir.exists("models")) {
+  dir.create(file.path(getwd(), "models"), showWarnings = FALSE)
+  setwd(file.path(getwd(), "models"))
+} else{ 
+  setwd(file.path(getwd(), "models"))
+}
 
-saveRDS(svm_building,"SVM_Building_Model.rds")
+if (!file.exists("SVM_Building_Model.rds")) {
+  saveRDS(svm_building,"SVM_Building_Model.rds")
+}
 
 ################################################################ Ranger (Random Forest)
 set.seed(123)
@@ -176,19 +199,22 @@ system.time(ranger_building<-ranger(BUILDINGID~.-LOCATION - FLOOR -LATITUDE - LO
 summary(ranger_building)
 
 #Test the ranger model
-ranger_building_pred <- predict(ranger_building, testSet)
+ranger_building_pred  <- predict(ranger_building, testSet)
 ranger_building_predV <- predict(ranger_building, validSet)
 
 # Confusion Matrix
-ranger_table_building<-table(testSet$BUILDINGID, ranger_building_pred$predictions)
-print(ranger_building_cm<-(confusionMatrix(ranger_table_building)))
+ranger_table_building    <- table(testSet$BUILDINGID, ranger_building_pred$predictions)
+#print(ranger_building_cm <- (confusionMatrix(ranger_table_building)))
+ranger_building_cm <- confusionMatrix(ranger_building_pred$predictions,testSet$BUILDINGID)
 
 #ranger_table_buildingV<-table(validSet$BUILDINGID, ranger_building_predV$predictions)
 ranger_buildingV_cmV <- confusionMatrix(ranger_building_predV$predictions,validSet$BUILDINGID)
 print(ranger_buildingV_cmV)
 
 #saveRDS(ranger_building,"C:/Users/46768/Documents/Dota/Wi-Fi position/Ranger_Building_Model.rds")
-saveRDS(ranger_building,"Ranger_Building_Model.rds")
+if (!file.exists("Ranger_Building_Model.rds")) {
+   saveRDS(ranger_building,"Ranger_Building_Model.rds")
+}
 
 ################################################################################## FLOOR #####
 
@@ -208,8 +234,8 @@ test_ind <- createDataPartition(test_valid$LOCATION, p = 0.5, list = FALSE)
 # smp_siz = floor(0.5*nrow(test_valid))
 # test_ind = sample(seq_len(nrow(test_valid)), size = smp_siz) 
 
-testSet = test_valid[test_ind,] 
-validSet =test_valid[-test_ind,]  
+testSet  <- test_valid[test_ind,] 
+validSet <- test_valid[-test_ind,]  
 ########################################################################### SVM ####
 set.seed(123)
 system.time(svm_floor <- svm(LOCATION ~ .-BUILDINGID - FLOOR - LOCATION - LATITUDE , data = trainSet))
@@ -218,7 +244,7 @@ system.time(svm_floor <- svm(LOCATION ~ .-BUILDINGID - FLOOR - LOCATION - LATITU
 summary(svm_floor)
 
 #Test the svm model
-svm_floor_pred <- predict(svm_floor, newdata=testSet)
+svm_floor_pred  <- predict(svm_floor, newdata=testSet)
 svm_floor_predV <- predict(svm_floor, newdata=validSet)
 
 #Confusion Matrix
@@ -226,7 +252,10 @@ print(svm_floor_cm <- confusionMatrix (svm_floor_pred, testSet$LOCATION))
 svm_floor_cmV <- confusionMatrix (svm_floor_predV, validSet$LOCATION)
 
 #Save Decision tree floor model
-saveRDS(svm_floor,"C:/Users/46768/Documents/Dota/Wi-Fi position/SVM_Floor_Model.rds")
+if (!file.exists("SVM_Floor_Model.rds")) {
+  saveRDS(svm_floor,"SVM_Floor_Model.rds")
+}
+#saveRDS(svm_floor,"C:/Users/46768/Documents/Dota/Wi-Fi position/SVM_Floor_Model.rds")
 
 ######################################################## Ranger (Random Forest) ####
 set.seed(123)
@@ -240,23 +269,26 @@ ranger_floor_pred  <- predict(ranger_floor, testSet)
 ranger_floor_predV <- predict(ranger_floor, validSet)
 
 #Confusion Matrix
-ranger_table_floor<-table(testSet$LOCATION, ranger_floor_pred$predictions)
-print(ranger_floor_cm<-(confusionMatrix(ranger_table_floor)))
-ranger_table_floorV<-table(validSet$LOCATION, ranger_floor_predV$predictions)
-print(ranger_floor_cmV<-(confusionMatrix(ranger_table_floorV)))
+#ranger_table_floor<-table(testSet$LOCATION, ranger_floor_pred$predictions)
+ranger_floor_cm     <- confusionMatrix(ranger_floor_pred$predictions,testSet$LOCATION)
+ranger_floor_cmV    <- confusionMatrix(ranger_floor_predV$predictions,validSet$LOCATION)
 
-#seperate column
-extract(data, col, into, regex = "([[:alnum:]]+)", remove = TRUE,
-        convert = FALSE, ...)
+#separate column
+#extract(data, col, into, regex = "([[:alnum:]]+)", remove = TRUE,
+#        convert = FALSE, ...)
 
 #If you just want the second variable:
 df <- data.frame(ranger_floor_pred = c("LOCATION"))
 df %>% separate("LOCATION", c("NA", "Predicted Floor"))
 
-PROV <-ranger_floor_pred %>% separate(LOCATION, c(NA, "Predicted floor"))
+#PROV <-ranger_floor_pred %>% separate(LOCATION, c(NA, "Predicted floor"))
+PROV <- as.factor(substr(ranger_floor_pred$predictions,3,3))
 
 #Save Ranger floor model
-saveRDS(ranger_floor,"C:/Users/46768/Documents/Dota/Wi-Fi position/Ranger_Floor_Model.rds")
+#saveRDS(ranger_floor,"C:/Users/46768/Documents/Dota/Wi-Fi position/Ranger_Floor_Model.rds")
+if (!file.exists("Ranger_Floor_Model.rds")) {
+   saveRDS(ranger_floor,"Ranger_Floor_Model.rds")
+}
 
 ############################################################################## LATITUDE ####
 
@@ -272,11 +304,12 @@ trainSet <- Model_data [inTrainFloor,]
 test_valid<- Model_data[-inTrainFloor,]
 
 set.seed(123)
-smp_siz = floor(0.5*nrow(test_valid))
-test_ind = sample(seq_len(nrow(test_valid)), size = smp_siz) 
+test_ind <- createDataPartition(Model_data$LATITUDE, p = 0.5, list = FALSE)
+#smp_siz = floor(0.5*nrow(test_valid))
+#test_ind = sample(seq_len(nrow(test_valid)), size = smp_siz) 
 
-testSet = test_valid[test_ind,] 
-validSet =test_valid[-test_ind,]
+testSet  <- test_valid[test_ind,] 
+validSet <- test_valid[-test_ind,]
 
 ############################################################################# SVM ####
 set.seed(123)
