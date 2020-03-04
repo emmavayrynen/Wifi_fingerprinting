@@ -131,11 +131,12 @@ longlat <- cbind(new_long, new_lat)
 #### Save DF ready for models ####
 if (!file.exists("Data_4_models.csv")) {
   write.csv(Data, file ="Data_4_models.csv", row.names = F)
+} else{
+  Model_data<-read.csv("Data_4_models.csv")
+  
+  #### Ignacio: Emma, free memory!!!
+  rm(Data)
 }
-
-Model_data<-read.csv("Data_4_models.csv")
-#### Ignacio: Emma, free memory!!!
-rm(Data)
 
 Model_data$LOCATION   <- as.factor(Model_data$LOCATION)
 Model_data$BUILDINGID <- as.factor(Model_data$BUILDINGID)
@@ -148,7 +149,7 @@ Model_data$FLOOR      <- as.factor(Model_data$FLOOR)
 
 ########################################### Split data 
 set.seed(123)
-inTrain    <- createDataPartition(y = Model_data$BUILDINGID, p = 0.6, t=3,list = FALSE)
+inTrain    <- createDataPartition(y = Model_data$BUILDINGID, p = 0.6,list = FALSE)
 trainSet   <- Model_data[inTrain,]
 test_valid <- Model_data[-inTrain,]
 
@@ -163,22 +164,8 @@ test_ind <- createDataPartition(test_valid$BUILDINGID, p = 0.5, list = FALSE)
 testSet  <- test_valid[test_ind,] 
 validSet <- test_valid[-test_ind,]  
 
-################################################################ SVM ####
-set.seed(123)
-system.time(svm_building <- svm(BUILDINGID ~ .-FLOOR -LOCATION -LONGITUDE -LATITUDE, data = trainSet))
-
-#Output
-svm_building
-
-#Test the svm model
-svm_building_pred  <- predict(svm_building, newdata=testSet)
-svm_building_predV <- predict(svm_building, newdata=validSet)
-
-# Confusion Matrix
-print(svm_building_cm <- confusionMatrix (svm_building_pred, testSet$BUILDINGID))
-print(svm_building_cmV <- confusionMatrix (svm_building_predV, validSet$BUILDINGID))
-
-#Save model
+#########################################################################
+# Check for "models" folder.
 #### Ignacio: Emma, try to be more organized.
 if (!dir.exists("models")) {
   dir.create(file.path(getwd(), "models"), showWarnings = FALSE)
@@ -187,40 +174,80 @@ if (!dir.exists("models")) {
   setwd(file.path(getwd(), "models"))
 }
 
-if (!file.exists("SVM_Building_Model.rds")) {
+################################################################ SVM ####
+
+if (file.exists("SVM_Building_Model.rds")) {
+  svm_building <- readRDS("SVM_Building_Model.rds")
+} else{
+  set.seed(123)
+  system.time(svm_building <- svm(BUILDINGID ~ .-FLOOR -LOCATION -LONGITUDE -LATITUDE, data = trainSet))
+  #Saving model
   saveRDS(svm_building,"SVM_Building_Model.rds")
 }
 
+#Output
+svm_building
+
+#Test the svm model
+svm_building_pred_train <- predict(svm_building, newdata=trainSet)
+svm_building_pred_test  <- predict(svm_building, newdata=testSet)
+svm_building_pred_val   <- predict(svm_building, newdata=validSet)
+  
+# Confusion Matrix
+print(svm_building_cm_train <- confusionMatrix(svm_building_pred_train, trainSet$BUILDINGID))
+print(svm_building_cm_test  <- confusionMatrix(svm_building_pred_test,  testSet$BUILDINGID))
+print(svm_building_cm_val   <- confusionMatrix(svm_building_pred_val,   validSet$BUILDINGID))
+
+# Fill dataframe with a summary of results
+Building <- data.frame(Model=rep("svm",3),
+                        Set=c("Train","Test","Validation"),
+                       Accuracy = c(round(svm_building_cm_train$overall[1],4),
+                                    round(svm_building_cm_test$overall[1],4),
+                                    round(svm_building_cm_val$overall[1],4)),
+                       Kappa = c(round(svm_building_cm_train$overall[2],4),
+                                 round(svm_building_cm_test$overall[2],4),
+                                 round(svm_building_cm_val$overall[2],4)))
+
 ################################################################ Ranger (Random Forest)
-set.seed(123)
-system.time(ranger_building<-ranger(BUILDINGID~.-LOCATION - FLOOR -LATITUDE - LONGITUDE, trainSet, importance="permutation"))
+
+if (file.exists("Ranger_Building_Model.rds")) {
+  ranger_building <- readRDS("Ranger_Building_Model.rds")
+} else{
+  set.seed(123)
+  system.time(ranger_building<-ranger(BUILDINGID~.-LOCATION - FLOOR -LATITUDE - LONGITUDE, trainSet, importance="permutation"))
+  #Saving model
+  saveRDS(ranger_building,"Ranger_Building_Model.rds")
+}
 
 #Output
 summary(ranger_building)
-
+  
 #Test the ranger model
-ranger_building_pred  <- predict(ranger_building, testSet)
-ranger_building_predV <- predict(ranger_building, validSet)
-
+ranger_building_pred_train  <- predict(ranger_building, trainSet)
+ranger_building_pred_test   <- predict(ranger_building, testSet)
+ranger_building_pred_val    <- predict(ranger_building, validSet)
+  
 # Confusion Matrix
-ranger_table_building    <- table(testSet$BUILDINGID, ranger_building_pred$predictions)
-#print(ranger_building_cm <- (confusionMatrix(ranger_table_building)))
-ranger_building_cm <- confusionMatrix(ranger_building_pred$predictions,testSet$BUILDINGID)
+ranger_building_cm_train <- confusionMatrix(ranger_building_pred_train$predictions,trainSet$BUILDINGID)
+ranger_building_cm_test  <- confusionMatrix(ranger_building_pred_test$predictions,testSet$BUILDINGID)
+ranger_building_cm_val   <- confusionMatrix(ranger_building_pred_val$predictions,validSet$BUILDINGID)
 
-#ranger_table_buildingV<-table(validSet$BUILDINGID, ranger_building_predV$predictions)
-ranger_buildingV_cmV <- confusionMatrix(ranger_building_predV$predictions,validSet$BUILDINGID)
-print(ranger_buildingV_cmV)
-
-#saveRDS(ranger_building,"C:/Users/46768/Documents/Dota/Wi-Fi position/Ranger_Building_Model.rds")
-if (!file.exists("Ranger_Building_Model.rds")) {
-   saveRDS(ranger_building,"Ranger_Building_Model.rds")
-}
+# Fill dataset with a summary of results
+Building <- rbind(Building,c("ranger","Train",
+                             round(ranger_building_cm_train$overall[1],4),
+                             round(ranger_building_cm_train$overall[2],4)))
+Building <- rbind(Building,c("ranger","Test",
+                             round(ranger_building_cm_test$overall[1],4),
+                             round(ranger_building_cm_test$overall[2],4)))
+Building <- rbind(Building,c("ranger","Validation",
+                             round(ranger_building_cm_val$overall[1],4),
+                             round(ranger_building_cm_val$overall[2],4)))
 
 ################################################################################## FLOOR #####
 
 ######################################### Split data 
 set.seed(123)
-inTrainFloor <- createDataPartition(y = Model_data$LOCATION, p = 0.6, t=3, list = FALSE)
+inTrainFloor <- createDataPartition(y = Model_data$LOCATION, p = 0.6, list = FALSE)
 trainSet     <- Model_data [inTrainFloor,]
 test_valid   <- Model_data[-inTrainFloor,]
 
@@ -235,60 +262,89 @@ test_ind <- createDataPartition(test_valid$LOCATION, p = 0.5, list = FALSE)
 # test_ind = sample(seq_len(nrow(test_valid)), size = smp_siz) 
 
 testSet  <- test_valid[test_ind,] 
-validSet <- test_valid[-test_ind,]  
+validSet <- test_valid[-test_ind,] 
+
 ########################################################################### SVM ####
-set.seed(123)
-system.time(svm_floor <- svm(LOCATION ~ .-BUILDINGID - FLOOR - LOCATION - LATITUDE , data = trainSet))
+
+if (file.exists("SVM_Floor_Model.rds")) {
+  svm_floor <- readRDS("SVM_Floor_Model.rds")
+} else{
+  set.seed(123)
+  system.time(svm_floor <- svm(LOCATION ~ .-BUILDINGID - FLOOR - LOCATION - LATITUDE , data = trainSet))
+  #Saving model
+  saveRDS(svm_floor,"SVM_Floor_Model.rds")
+} 
 
 #Output
 summary(svm_floor)
-
+  
 #Test the svm model
-svm_floor_pred  <- predict(svm_floor, newdata=testSet)
-svm_floor_predV <- predict(svm_floor, newdata=validSet)
-
+svm_floor_pred_train  <- predict(svm_floor, newdata=trainSet)
+svm_floor_pred_test   <- predict(svm_floor, newdata=testSet)
+svm_floor_pred_val    <- predict(svm_floor, newdata=validSet)
+  
 #Confusion Matrix
-print(svm_floor_cm <- confusionMatrix (svm_floor_pred, testSet$LOCATION))
-svm_floor_cmV <- confusionMatrix (svm_floor_predV, validSet$LOCATION)
+svm_floor_cm_train <- confusionMatrix(svm_floor_pred_train,trainSet$LOCATION)
+svm_floor_cm_test  <- confusionMatrix(svm_floor_pred_test,testSet$LOCATION)
+svm_floor_cm_val   <- confusionMatrix(svm_floor_pred_val,validSet$LOCATION)
 
-#Save Decision tree floor model
-if (!file.exists("SVM_Floor_Model.rds")) {
-  saveRDS(svm_floor,"SVM_Floor_Model.rds")
-}
-#saveRDS(svm_floor,"C:/Users/46768/Documents/Dota/Wi-Fi position/SVM_Floor_Model.rds")
+#Fill dataset with a summary of results
+Floor <- c()
+Floor <- rbind(Floor,c("SVM","Train",
+                             round(svm_floor_cm_train$overall[1],4),
+                             round(svm_floor_cm_train$overall[2],4)))
+Floor <- rbind(Floor,c("SVM","Test",
+                             round(svm_floor_cm_test$overall[1],4),
+                             round(svm_floor_cm_test$overall[2],4)))
+Floor <- rbind(Floor,c("SVM","Validation",
+                             round(svm_floor_cm_val$overall[1],4),
+                             round(svm_floor_cm_val$overall[2],4)))
 
 ######################################################## Ranger (Random Forest) ####
-set.seed(123)
-system.time(ranger_floor<-ranger(LOCATION~.-BUILDINGID - FLOOR -LATITUDE - LONGITUDE, trainSet, importance="permutation"))
+if (file.exists("Ranger_Floor_Model.rds")) {
+  ranger_floor<- readRDS("Ranger_Floor_Model.rds")
+} else{
+  set.seed(123)
+  system.time(ranger_floor<-ranger(LOCATION~.-BUILDINGID - FLOOR -LATITUDE - LONGITUDE, trainSet, importance="permutation"))
+  #Saving model
+  saveRDS(ranger_floor,"Ranger_Floor_Model.rds")
+} 
 
 #Output
 summary(ranger_floor)
-
+  
 #Test the ranger model
-ranger_floor_pred  <- predict(ranger_floor, testSet)
-ranger_floor_predV <- predict(ranger_floor, validSet)
-
+ranger_floor_pred_train   <- predict(ranger_floor, trainSet)
+ranger_floor_pred_test    <- predict(ranger_floor, testSet)
+ranger_floor_pred_valid   <- predict(ranger_floor, validSet)
+  
 #Confusion Matrix
-#ranger_table_floor<-table(testSet$LOCATION, ranger_floor_pred$predictions)
-ranger_floor_cm     <- confusionMatrix(ranger_floor_pred$predictions,testSet$LOCATION)
-ranger_floor_cmV    <- confusionMatrix(ranger_floor_predV$predictions,validSet$LOCATION)
+ranger_floor_cm_train <- confusionMatrix(ranger_floor_pred_train$predictions,trainSet$LOCATION)
+ranger_floor_cm_test  <- confusionMatrix(ranger_floor_pred_test$predictions,testSet$LOCATION)
+ranger_floor_cm_val   <- confusionMatrix(ranger_floor_pred_valid$predictions,validSet$LOCATION)
 
+Floor <- rbind(Floor,c("ranger","Train",
+                       round(ranger_floor_cm_train$overall[1],4),
+                       round(ranger_floor_cm_train$overall[2],4)))
+Floor <- rbind(Floor,c("ranger","Test",
+                       round(ranger_floor_cm_test$overall[1],4),
+                       round(ranger_floor_cm_test$overall[2],4)))
+Floor <- rbind(Floor,c("ranger","Validation",
+                       round(ranger_floor_cm_val$overall[1],4),
+                       round(ranger_floor_cm_val$overall[2],4)))
+
+  
 #separate column
 #extract(data, col, into, regex = "([[:alnum:]]+)", remove = TRUE,
 #        convert = FALSE, ...)
-
+  
 #If you just want the second variable:
 df <- data.frame(ranger_floor_pred = c("LOCATION"))
 df %>% separate("LOCATION", c("NA", "Predicted Floor"))
-
+  
 #PROV <-ranger_floor_pred %>% separate(LOCATION, c(NA, "Predicted floor"))
 PROV <- as.factor(substr(ranger_floor_pred$predictions,3,3))
 
-#Save Ranger floor model
-#saveRDS(ranger_floor,"C:/Users/46768/Documents/Dota/Wi-Fi position/Ranger_Floor_Model.rds")
-if (!file.exists("Ranger_Floor_Model.rds")) {
-   saveRDS(ranger_floor,"Ranger_Floor_Model.rds")
-}
 
 ############################################################################## LATITUDE ####
 
@@ -299,12 +355,11 @@ above <- function(x,pred) {value = (x * -0.56) + 315; if(value > pred) {return(v
 
 ######################################### Split data 
 set.seed(123)
-inTrainFloor<- createDataPartition(y = Model_data$LATITUDE, p = 0.6, t=3,list = FALSE)
-trainSet <- Model_data [inTrainFloor,]
-test_valid<- Model_data[-inTrainFloor,]
+inTrainFloor<- createDataPartition(y = Model_data$LATITUDE, p = 0.6,list = FALSE)
+trainSet   <- Model_data [inTrainFloor,]
+test_valid <- Model_data[-inTrainFloor,]
 
-set.seed(123)
-test_ind <- createDataPartition(Model_data$LATITUDE, p = 0.5, list = FALSE)
+test_ind <- createDataPartition(test_valid$LATITUDE, p = 0.5, list = FALSE)
 #smp_siz = floor(0.5*nrow(test_valid))
 #test_ind = sample(seq_len(nrow(test_valid)), size = smp_siz) 
 
@@ -312,127 +367,205 @@ testSet  <- test_valid[test_ind,]
 validSet <- test_valid[-test_ind,]
 
 ############################################################################# SVM ####
-set.seed(123)
-system.time(svm_lat <- svm(LATITUDE ~ .+MAX -BUILDINGID - FLOOR - LOCATION - LONGITUDE, data = trainSet))
+
+if (file.exists("SVM_Latitude_Model.rds")) {
+  svm_lat <- readRDS("SVM_Latitude_Model.rds")
+} else{
+  set.seed(123)
+  system.time(svm_lat <- svm(LATITUDE ~ .+MAX -BUILDINGID - FLOOR - LOCATION - LONGITUDE, data = trainSet))
+  #Saving model
+  saveRDS(svm_lat,"SVM_Latitude_Model.rds")
+}
 
 #Output
 summary(svm_lat)
-
+  
 #Predict the svm model
-svm_lat_pred  <- predict(svm_lat, newdata=testSet)
-svm_lat_predV <- predict(svm_lat, newdata=validSet)
-
-
+svm_lat_pred_train  <- predict(svm_lat, newdata=trainSet)
+svm_lat_pred_test   <- predict(svm_lat, newdata=testSet)
+svm_lat_pred_val    <- predict(svm_lat, newdata=validSet)
+  
 #Error metrics
-print(postResample(svm_lat_pred, testSet$LATITUDE))
-print(postResample(svm_lat_predV,validSet$LATITUDE))
+svm_lat_err_train <- postResample(svm_lat_pred_train,trainSet$LATITUDE)
+svm_lat_err_test  <- postResample(svm_lat_pred_test,testSet$LATITUDE)
+svm_lat_err_val   <- postResample(svm_lat_pred_val,validSet$LATITUDE)
 
+#Fill dataset with a summary of results
+Latitude <- c()
+Latitude <- rbind(Latitude,c("svm","Train",round(svm_lat_err_train,2)))
+Latitude <- rbind(Latitude,c("svm","Test",round(svm_lat_err_test,2)))
+Latitude <- rbind(Latitude,c("svm","Validation",round(svm_lat_err_val,2)))
 
-#Save
-saveRDS(svm_lat,"C:/Users/46768/Documents/Dota/Wi-Fi position/SVM_Latitude_Model.rds")
 
 ########################################################### Ranger (Random forest) ####
-set.seed(123)
-system.time(ranger_lat <- ranger(LATITUDE ~. -BUILDINGID - FLOOR - LOCATION - LATITUDE ,trainSet,  importance = "permutation", case.weights = T))
+if (file.exists("Ranger_Latitude_Model.rds")) {
+  ranger_lat <- readRDS("Ranger_Latitude_Model.rds")
+} else{
+  set.seed(123)
+  system.time(ranger_lat <- ranger(LATITUDE ~. -BUILDINGID - FLOOR - LOCATION - LATITUDE ,trainSet,  importance = "permutation", case.weights = T))
+
+  #Saving model
+  saveRDS(ranger_lat,"Ranger_Latitude_Model.rds")
+  
+} 
 
 #Output
 summary(ranger_lat)
-
+  
 #Predict the ranger model
-ranger_lat_pred  <-  predict(ranger_lat, testSet)
-ranger_lat_predV <- predict(ranger_lat, validSet)
-
+ranger_lat_pred_train  <- predict(ranger_lat,trainSet)
+ranger_lat_pred_test   <- predict(ranger_lat,testSet)
+ranger_lat_pred_val    <- predict(ranger_lat,validSet)
+  
 #Error metrics
-print(postResample(ranger_lat_pred$predictions, testSet$LATITUDE))
-print(postResample(ranger_lat_predV$predictions, validSet$LATITUDE)) 
+ranger_lat_err_train <- postResample(ranger_lat_pred_train$predictions,trainSet$LATITUDE)
+ranger_lat_err_test  <- postResample(ranger_lat_pred_test$predictions,testSet$LATITUDE)
+ranger_lat_err_val   <- postResample(ranger_lat_pred_val$predictions,validSet$LATITUDE)
 
-#Save model
-saveRDS(ranger_lat,"C:/Users/46768/Documents/Dota/Wi-Fi position/Ranger_Latitude_Model.rds")
+#Update dataset with a summary of results
+Latitude <- rbind(Latitude,c("ranger","Train",round(ranger_lat_err_train,2)))
+Latitude <- rbind(Latitude,c("ranger","Test",round(ranger_lat_err_test,2)))
+Latitude <- rbind(Latitude,c("ranger","Validation",round(ranger_lat_err_val,2)))
 
 ################################################################################ KNN ####
-set.seed(123)
-system.time(knn_lat <-knnreg(LATITUDE~.,data = trainSet[, -which(names(trainSet) %in% c("LONGITUDE","BUILDINGID",
-                                                                                          "FLOOR", "LOCATION"))]))
-#Test model
-knn_lat_pred  <- predict(knn_lat, testSet)
-knn_lat_predV <- predict(knn_lat, validSet)
 
+if (file.exists("knn_Latitude_Model.rds")) {
+  knn_lat <- readRDS("knn_Latitude_Model.rds")
+} else{
+  set.seed(123)
+  system.time(knn_lat <-knnreg(LATITUDE~.,data = trainSet[, -which(names(trainSet) %in% c("LONGITUDE","BUILDINGID",
+                                                                                          "FLOOR", "LOCATION"))]))
+
+  #Saving model
+  saveRDS(knn_lat,"knn_Latitude_Model.rds")
+  
+}
+
+#Test model
+knn_lat_pred_train <- predict(knn_lat,trainSet)
+knn_lat_pred_test  <- predict(knn_lat,testSet)
+knn_lat_pred_val   <- predict(knn_lat,validSet)
+  
 #Metrics
-print(postResample(knn_lat_pred, testSet$LATITUDE))
-print(postResample(knn_lat_predV, validSet$LATITUDE))
+knn_lat_err_train <- postResample(knn_lat_pred_train,trainSet$LATITUDE)
+knn_lat_err_test  <- postResample(knn_lat_pred_test,testSet$LATITUDE)
+knn_lat_err_val   <- postResample(knn_lat_pred_val,validSet$LATITUDE)
+
+#Update dataset with a summary of results
+Latitude <- rbind(Latitude,c("k-NN","Train",round(knn_lat_err_train,2)))
+Latitude <- rbind(Latitude,c("k-NN","Test",round(knn_lat_err_test,2)))
+Latitude <- rbind(Latitude,c("k-NN","Validation",round(knn_lat_err_val,2)))
 
 ##################################################################################### LONGITUDE ####
 
 ######################################### Split data into training and testing set
 set.seed(123)
-inTrainFloor<- createDataPartition(y = Model_data$LONGITUDE, p = 0.6, t = 3, list = FALSE)
+inTrainFloor<- createDataPartition(y = Model_data$LONGITUDE, p = 0.6,list = FALSE)
 trainSet <- Model_data [inTrainFloor,]
 test_valid<- Model_data[-inTrainFloor,]
 
-set.seed(123)
-smp_siz = floor(0.5*nrow(test_valid))
-test_ind = sample(seq_len(nrow(test_valid)), size = smp_siz) 
+# set.seed(123)
+# smp_siz = floor(0.5*nrow(test_valid))
+# test_ind = sample(seq_len(nrow(test_valid)), size = smp_siz) 
 
-testSet = test_valid[test_ind,] 
-validSet =test_valid[-test_ind,]  
+test_ind <- createDataPartition(y = test_valid$LONGITUDE, p = 0.5,list = FALSE)
+testSet  <- test_valid[test_ind,] 
+validSet <- test_valid[-test_ind,]  
 
 
 ################################################################################## SVM ####
-set.seed(123)
-system.time(svm_long <- svm(LONGITUDE ~ . -BUILDINGID - FLOOR - LOCATION - LATITUDE, data = trainSet))
+if (file.exists("SVM_Longitude_Model.rds")) {
+  svm_long <- readRDS("SVM_Longitude_Model.rds")
+} else{
+  set.seed(123)
+  system.time(svm_long <- svm(LONGITUDE ~ . -BUILDINGID - FLOOR - LOCATION - LATITUDE, data = trainSet))
+
+  #Saving model
+  saveRDS(svm_long,"SVM_Longitude_Model.rds")
+  
+} 
 
 #Output
 summary(svm_long)
-
+  
 #Predict the svm model
-svm_long_pred  <- predict(svm_long, newdata=testSet)
-svm_long_predV <- predict(svm_long, newdata=validSet)
-
+svm_long_pred_train <- predict(svm_long, newdata=trainSet)
+svm_long_pred_test  <- predict(svm_long, newdata=testSet)
+svm_long_pred_val   <- predict(svm_long, newdata=validSet)
+  
 #Metrics
-#Predictions compared to test data
-print(metrics_long_svm<-postResample(svm_long_pred, testSet$LONGITUDE))
-print(metrics_long_svm2 <-mape(testSet$LONGITUDE, svm_long_pred))
+svm_long_err_train <- postResample(svm_long_pred_train,trainSet$LONGITUDE)
+svm_long_err_test  <- postResample(svm_long_pred_test,testSet$LONGITUDE)
+svm_long_err_val   <- postResample(svm_long_pred_val,validSet$LONGITUDE)
 
-#Save
-saveRDS(svm_long,"C:/Users/46768/Documents/Dota/Wi-Fi position/SVM_Longitude_Model.rds")
+#Dataset to store error metrics
+Longitude <- c()
+Longitude <- rbind(Longitude,c("svm","Train",round(svm_long_err_train,2)))
+Longitude <- rbind(Longitude,c("svm","Test",round(svm_long_err_test,2)))
+Longitude <- rbind(Longitude,c("svm","Validation",round(svm_long_err_val,2)))
 
 ########################################################################## Ranger (Random Forest)
-set.seed(123)
-system.time(ranger_long <- ranger(LONGITUDE ~ .-BUILDINGID - FLOOR - LOCATION - LATITUDE, trainSet, importance = "permutation", case.weights = T))
+if (file.exists("Ranger_Longitude_Model.rds")) {
+  ranger_long <- readRDS("Ranger_Longitude_Model.rds")
+} else{
+  set.seed(123)
+  system.time(ranger_long <- ranger(LONGITUDE ~ .-BUILDINGID - FLOOR - LOCATION - LATITUDE, trainSet, importance = "permutation", case.weights = T))
+
+  #Save Ranger Longitude model
+  saveRDS(ranger_long,"Ranger_Longitude_Model.rds")
+  
+}
 
 #Output
 summary(ranger_long)
-
+  
 #Test the ranger model
-ranger_long_pred <- predict(ranger_long, testSet)
-ranger_long_predV <- predict(ranger_long, validSet)
-
-
+ranger_long_pred_train <- predict(ranger_long,trainSet)
+ranger_long_pred_test  <- predict(ranger_long,testSet)
+ranger_long_pred_val   <- predict(ranger_long,validSet)
+  
 #Metrics
-#Predictions compared to test data
-print(metrics_long_ranger<-postResample(ranger_long_pred$predictions, testSet$LONGITUDE)) 
-metrics_long_ranger2<-mape(testSet$LONGITUDE, ranger_long_pred$predictions)
+ranger_long_err_train <- postResample(ranger_long_pred_train$predictions,trainSet$LONGITUDE)
+ranger_long_err_test  <- postResample(ranger_long_pred_test$predictions, testSet$LONGITUDE)
+ranger_long_err_val   <- postResample(ranger_long_pred_val$predictions, validSet$LONGITUDE)
 
-# Predictions compared to valid data
-print(metrics_long_ranger<-postResample(ranger_long_predV$predictions, validSet$LONGITUDE))
-print(metrics_long_rangerV2 <-mape(validSet$LONGITUDE, ranger_long_predV$predictions))
-
-#Save Ranger Longitude model
-saveRDS(ranger_long,"C:/Users/46768/Documents/Dota/Wi-Fi position/Ranger_Longitude_Model.rds")
+#Dataset to store error metrics
+Longitude <- rbind(Longitude,c("ranger","Train",round(ranger_long_err_train,2)))
+Longitude <- rbind(Longitude,c("ranger","Test",round(ranger_long_err_test,2)))
+Longitude <- rbind(Longitude,c("ranger","Validation",round(ranger_long_err_val,2)))
 
 ###################################################################################### KNN ####
-set.seed(123)
-system.time(knn_long <-knnreg(LONGITUDE~.,data = trainSet[, -which(names(trainSet) %in% c("LATITUDE","BUILDINGID",
-                                                                                          "FLOOR", "LOCATION"))]))
+if (file.exists("knn_Longitude_Model.rds")) {
+  knn_long <- readRDS("knn_Longitude_Model.rds")
+} else{
+  set.seed(123)
+  system.time(knn_long <-knnreg(LONGITUDE~.,data = trainSet[, -which(names(trainSet) %in% c("LATITUDE","BUILDINGID",
+                                                                                            "FLOOR", "LOCATION"))]))
+  #Saving model
+  saveRDS(knn_long,"knn_Longitude_Model.rds")
+  
+}
+  
 #Test model
-knn_long_pred  <- predict(knn_long, testSet)
-knn_long_predV <- predict(knn_long, validSet)
-
+knn_long_pred_train <- predict(knn_long,trainSet)
+knn_long_pred_test  <- predict(knn_long,testSet)
+knn_long_pred_val   <- predict(knn_long,validSet)
+  
 #Metrics
-print(postResample(knn_long_pred, testSet$LONGITUDE))
-print(postResample(knn_long_predV, validSet$LONGITUDE))
+knn_long_err_train <- postResample(knn_long_pred_train,trainSet$LONGITUDE)
+knn_long_err_test  <- postResample(knn_long_pred_test,testSet$LONGITUDE)
+knn_long_err_val   <- postResample(knn_long_pred_val,validSet$LONGITUDE)
 
+#Update error metrics dataset
+Longitude <- rbind(Longitude,c("k-NN","Train",round(knn_long_err_train,2)))
+Longitude <- rbind(Longitude,c("k-NN","Test",round(knn_long_err_test,2)))
+Longitude <- rbind(Longitude,c("k-NN","Validation",round(knn_long_err_val,2)))
 
+#####
+Floor <- as.data.frame(Floor)
+colnames(Floor) <- c("Model","Set","Accuracy","Kappa")
+Floor$Accuracy <- as.numeric(Floor$Accuracy)
+Floor$Kappa    <- as.numeric(Floor$Kappa)
 
 ######################################################################## Errors #####################
 #Data frame to plot & compare longitude & latitude with real location
