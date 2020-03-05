@@ -141,6 +141,7 @@ if (!file.exists("Data_4_models.csv")) {
 Model_data$LOCATION   <- as.factor(Model_data$LOCATION)
 Model_data$BUILDINGID <- as.factor(Model_data$BUILDINGID)
 Model_data$FLOOR      <- as.factor(Model_data$FLOOR)
+
 ############################################### Models #############################################
 
 # Cluster <- makeCluster(5)
@@ -208,6 +209,9 @@ Building <- data.frame(Model=rep("svm",3),
                                  round(svm_building_cm_test$overall[2],4),
                                  round(svm_building_cm_val$overall[2],4)))
 
+Building$Model <- factor(Building$Model,levels = c("svm","ranger","k-NN"))
+Building$Set   <- factor(Building$Set,levels = c("Train","Test","Validation"))
+
 ################################################################ Ranger (Random Forest)
 
 if (file.exists("Ranger_Building_Model.rds")) {
@@ -242,6 +246,15 @@ Building <- rbind(Building,c("ranger","Test",
 Building <- rbind(Building,c("ranger","Validation",
                              round(ranger_building_cm_val$overall[1],4),
                              round(ranger_building_cm_val$overall[2],4)))
+
+Building$Accuracy <- as.numeric(Building$Accuracy)
+Building$Kappa    <- as.numeric(Building$Kappa)
+
+ggplot(melt(Building), aes(x=Model, y=value,fill=Model))+
+  geom_col()+
+  facet_grid(variable~Set, scales="free") +
+  theme(legend.position = "none") +
+  ggtitle("Model error metrics in predicting Building")
 
 ################################################################################## FLOOR #####
 
@@ -288,19 +301,21 @@ svm_floor_cm_train <- confusionMatrix(svm_floor_pred_train,trainSet$LOCATION)
 svm_floor_cm_test  <- confusionMatrix(svm_floor_pred_test,testSet$LOCATION)
 svm_floor_cm_val   <- confusionMatrix(svm_floor_pred_val,validSet$LOCATION)
 
-#Fill dataset with a summary of results
-Floor <- c()
-Floor <- rbind(Floor,c("SVM","Train",
-                             round(svm_floor_cm_train$overall[1],4),
-                             round(svm_floor_cm_train$overall[2],4)))
-Floor <- rbind(Floor,c("SVM","Test",
-                             round(svm_floor_cm_test$overall[1],4),
-                             round(svm_floor_cm_test$overall[2],4)))
-Floor <- rbind(Floor,c("SVM","Validation",
-                             round(svm_floor_cm_val$overall[1],4),
-                             round(svm_floor_cm_val$overall[2],4)))
+# Fill dataframe with a summary of results
+Floor <- data.frame(Model=rep("svm",3),
+                       Set=c("Train","Test","Validation"),
+                       Accuracy = c(round(svm_floor_cm_train$overall[1],4),
+                                    round(svm_floor_cm_test$overall[1],4),
+                                    round(svm_floor_cm_val$overall[1],4)),
+                       Kappa = c(round(svm_floor_cm_train$overall[2],4),
+                                 round(svm_floor_cm_test$overall[2],4),
+                                 round(svm_floor_cm_val$overall[2],4)))
+
+Floor$Model <- factor(Floor$Model,levels = c("svm","ranger","k-NN"))
+Floor$Set   <- factor(Floor$Set,levels = c("Train","Test","Validation"))
 
 ######################################################## Ranger (Random Forest) ####
+
 if (file.exists("Ranger_Floor_Model.rds")) {
   ranger_floor<- readRDS("Ranger_Floor_Model.rds")
 } else{
@@ -323,15 +338,25 @@ ranger_floor_cm_train <- confusionMatrix(ranger_floor_pred_train$predictions,tra
 ranger_floor_cm_test  <- confusionMatrix(ranger_floor_pred_test$predictions,testSet$LOCATION)
 ranger_floor_cm_val   <- confusionMatrix(ranger_floor_pred_valid$predictions,validSet$LOCATION)
 
+# Fill dataset with a summary of results
 Floor <- rbind(Floor,c("ranger","Train",
-                       round(ranger_floor_cm_train$overall[1],4),
-                       round(ranger_floor_cm_train$overall[2],4)))
+                             round(ranger_floor_cm_train$overall[1],4),
+                             round(ranger_floor_cm_train$overall[2],4)))
 Floor <- rbind(Floor,c("ranger","Test",
-                       round(ranger_floor_cm_test$overall[1],4),
-                       round(ranger_floor_cm_test$overall[2],4)))
+                             round(ranger_floor_cm_test$overall[1],4),
+                             round(ranger_floor_cm_test$overall[2],4)))
 Floor <- rbind(Floor,c("ranger","Validation",
-                       round(ranger_floor_cm_val$overall[1],4),
-                       round(ranger_floor_cm_val$overall[2],4)))
+                             round(ranger_floor_cm_val$overall[1],4),
+                             round(ranger_floor_cm_val$overall[2],4)))
+
+Floor$Accuracy <- as.numeric(Floor$Accuracy)
+Floor$Kappa    <- as.numeric(Floor$Kappa)
+
+ggplot(melt(Floor), aes(x=Model, y=value,fill=Model))+
+  geom_col()+
+  facet_grid(variable~Set, scales="free") +
+  theme(legend.position = "none") +
+  ggtitle("Model error metrics in predicting Floor")
 
   
 #separate column
@@ -391,13 +416,23 @@ svm_lat_err_test  <- postResample(svm_lat_pred_test,testSet$LATITUDE)
 svm_lat_err_val   <- postResample(svm_lat_pred_val,validSet$LATITUDE)
 
 #Fill dataset with a summary of results
-Latitude <- c()
-Latitude <- rbind(Latitude,c("svm","Train",round(svm_lat_err_train,2)))
-Latitude <- rbind(Latitude,c("svm","Test",round(svm_lat_err_test,2)))
-Latitude <- rbind(Latitude,c("svm","Validation",round(svm_lat_err_val,2)))
+Latitude <- data.frame(Model=rep("svm",3),
+                       Set=c("Train","Test","Validation"),
+                       RMSE = c(round(svm_lat_err_train[1],2),
+                                round(svm_lat_err_test[1],2),
+                                round(svm_lat_err_val[1],2)),
+                       Rsquared = c(round(svm_lat_err_train[2],2),
+                                    round(svm_lat_err_test[2],2),
+                                    round(svm_lat_err_val[2],2)),
+                       MAE = c(round(svm_lat_err_train[3],2),
+                               round(svm_lat_err_test[3],2),
+                               round(svm_lat_err_val[3],2)))
 
+Latitude$Model <- factor(Latitude$Model,levels = c("svm","ranger","k-NN"))
+Latitude$Set   <- factor(Latitude$Set,levels = c("Train","Test","Validation"))
 
 ########################################################### Ranger (Random forest) ####
+
 if (file.exists("Ranger_Latitude_Model.rds")) {
   ranger_lat <- readRDS("Ranger_Latitude_Model.rds")
 } else{
@@ -456,24 +491,38 @@ Latitude <- rbind(Latitude,c("k-NN","Train",round(knn_lat_err_train,2)))
 Latitude <- rbind(Latitude,c("k-NN","Test",round(knn_lat_err_test,2)))
 Latitude <- rbind(Latitude,c("k-NN","Validation",round(knn_lat_err_val,2)))
 
+Latitude$RMSE     <- as.numeric(Latitude$RMSE)
+Latitude$Rsquared <- as.numeric(Latitude$Rsquared)
+Latitude$MAE      <- as.numeric(Latitude$MAE)
+
+ggplot(melt(Latitude), aes(x=Model, y=value,fill=Model))+
+  geom_col()+
+  facet_grid(variable~Set, scales="free") +
+  theme(legend.position = "none") +
+  ggtitle("Model error metrics in predicting Latitude")
+
+
 ##################################################################################### LONGITUDE ####
 
 ######################################### Split data into training and testing set
-set.seed(123)
-inTrainFloor<- createDataPartition(y = Model_data$LONGITUDE, p = 0.6,list = FALSE)
-trainSet <- Model_data [inTrainFloor,]
-test_valid<- Model_data[-inTrainFloor,]
-
+####
+#### Ignacio: Emma, you can't split again the dataset as Longitude and Latitude are tied. 
 # set.seed(123)
-# smp_siz = floor(0.5*nrow(test_valid))
-# test_ind = sample(seq_len(nrow(test_valid)), size = smp_siz) 
-
-test_ind <- createDataPartition(y = test_valid$LONGITUDE, p = 0.5,list = FALSE)
-testSet  <- test_valid[test_ind,] 
-validSet <- test_valid[-test_ind,]  
+# inTrainFloor<- createDataPartition(y = Model_data$LONGITUDE, p = 0.6,list = FALSE)
+# trainSet <- Model_data [inTrainFloor,]
+# test_valid<- Model_data[-inTrainFloor,]
+# 
+# # set.seed(123)
+# # smp_siz = floor(0.5*nrow(test_valid))
+# # test_ind = sample(seq_len(nrow(test_valid)), size = smp_siz) 
+# 
+# test_ind <- createDataPartition(y = test_valid$LONGITUDE, p = 0.5,list = FALSE)
+# testSet  <- test_valid[test_ind,] 
+# validSet <- test_valid[-test_ind,]  
 
 
 ################################################################################## SVM ####
+
 if (file.exists("SVM_Longitude_Model.rds")) {
   svm_long <- readRDS("SVM_Longitude_Model.rds")
 } else{
@@ -498,13 +547,24 @@ svm_long_err_train <- postResample(svm_long_pred_train,trainSet$LONGITUDE)
 svm_long_err_test  <- postResample(svm_long_pred_test,testSet$LONGITUDE)
 svm_long_err_val   <- postResample(svm_long_pred_val,validSet$LONGITUDE)
 
-#Dataset to store error metrics
-Longitude <- c()
-Longitude <- rbind(Longitude,c("svm","Train",round(svm_long_err_train,2)))
-Longitude <- rbind(Longitude,c("svm","Test",round(svm_long_err_test,2)))
-Longitude <- rbind(Longitude,c("svm","Validation",round(svm_long_err_val,2)))
+#Fill dataset with a summary of results
+Longitude <- data.frame(Model=rep("svm",3),
+                       Set=c("Train","Test","Validation"),
+                       RMSE = c(round(svm_long_err_train[1],2),
+                                round(svm_long_err_test[1],2),
+                                round(svm_long_err_val[1],2)),
+                       Rsquared = c(round(svm_long_err_train[2],2),
+                                    round(svm_long_err_test[2],2),
+                                    round(svm_long_err_val[2],2)),
+                       MAE = c(round(svm_long_err_train[3],2),
+                               round(svm_long_err_test[3],2),
+                               round(svm_long_err_val[3],2)))
+
+Longitude$Model <- factor(Longitude$Model,levels = c("svm","ranger","k-NN"))
+Longitude$Set   <- factor(Longitude$Set,levels = c("Train","Test","Validation"))
 
 ########################################################################## Ranger (Random Forest)
+
 if (file.exists("Ranger_Longitude_Model.rds")) {
   ranger_long <- readRDS("Ranger_Longitude_Model.rds")
 } else{
@@ -529,12 +589,13 @@ ranger_long_err_train <- postResample(ranger_long_pred_train$predictions,trainSe
 ranger_long_err_test  <- postResample(ranger_long_pred_test$predictions, testSet$LONGITUDE)
 ranger_long_err_val   <- postResample(ranger_long_pred_val$predictions, validSet$LONGITUDE)
 
-#Dataset to store error metrics
+#Update dataset with a summary of results
 Longitude <- rbind(Longitude,c("ranger","Train",round(ranger_long_err_train,2)))
 Longitude <- rbind(Longitude,c("ranger","Test",round(ranger_long_err_test,2)))
 Longitude <- rbind(Longitude,c("ranger","Validation",round(ranger_long_err_val,2)))
 
 ###################################################################################### KNN ####
+
 if (file.exists("knn_Longitude_Model.rds")) {
   knn_long <- readRDS("knn_Longitude_Model.rds")
 } else{
@@ -561,85 +622,103 @@ Longitude <- rbind(Longitude,c("k-NN","Train",round(knn_long_err_train,2)))
 Longitude <- rbind(Longitude,c("k-NN","Test",round(knn_long_err_test,2)))
 Longitude <- rbind(Longitude,c("k-NN","Validation",round(knn_long_err_val,2)))
 
-#####
-Floor <- as.data.frame(Floor)
-colnames(Floor) <- c("Model","Set","Accuracy","Kappa")
-Floor$Accuracy <- as.numeric(Floor$Accuracy)
-Floor$Kappa    <- as.numeric(Floor$Kappa)
+Longitude$RMSE     <- as.numeric(Longitude$RMSE)
+Longitude$Rsquared <- as.numeric(Longitude$Rsquared)
+Longitude$MAE      <- as.numeric(Longitude$MAE)
+
+ggplot(melt(Longitude), aes(x=Model, y=value,fill=Model))+
+  geom_col()+
+  facet_grid(variable~Set, scales="free") +
+  theme(legend.position = "none") +
+  ggtitle("Model error metrics in predicting Latitude")
 
 ######################################################################## Errors #####################
 #Data frame to plot & compare longitude & latitude with real location
-Lat_Long_Diff <- data.frame(
-  LONG.RANGER <- ranger_long_pred$predictions,
-  LONG.KNN <-knn_long_pred,
-  LONG.SVM <- svm_long_pred,
-  LAT.SVM <- svm_lat_pred,
-  LAT.RANGER<- ranger_lat_pred$predictions,
-  LAT.KNN <- knn_lat_pred,
-  LATITUDE <- testSet$LATITUDE,
-  LONGITUDE <- testSet$LONGITUDE,
-  BUILDING = testSet$BUILDINGID,
-  FLOOR = testSet$FLOOR)
+#### Ignacio: Emma, you can't do this because for Longitude, you create one specific dataset 
+#### split in: Train, Test, Val, which was DIFFERENT fron the one you created for Latitude.
+#### And what's more, when you did the splits, you overwrite the datasets so you can do this
+#### as the results are totally messup.
+# Lat_Long_Diff <- data.frame(
+#   LONG.RANGER <- ranger_long_pred_val$predictions,
+#   LONG.KNN <-knn_long_pred_val,
+#   LONG.SVM <- svm_long_pred_val,
+#   LAT.SVM <- svm_lat_pred_val,
+#   LAT.RANGER<- ranger_lat_pred_val$predictions,
+#   LAT.KNN <- knn_lat_pred_val,
+#   LATITUDE <- validSet$LATITUDE,
+#   LONGITUDE <- validSet$LONGITUDE,
+#   BUILDING = validSet$BUILDINGID,
+#   FLOOR = validSet$FLOOR)
   
 ####################################################################### LATITUDE ERRORS ####
-#Only latitude
-  plot_ly(Lat_Long_Diff, x = ~LONGITUDE, y = ~LATITUDE, type = "scatter", name = "Real location") %>%
-    add_trace(Lat_Long_Diff, y = ~LAT.SVM, name = "SVM prediction")%>%
-    add_trace(Lat_Long_Diff,y = ~LAT.RANGER,name = "Ranger prediction") %>%
-    add_trace(Lat_Long_Diff, x = ~LONG.KNN, name = "KNN prediction") %>%
-    layout(title = "Predicted latitude")
+# #Only latitude
+#   plot_ly(Lat_Long_Diff, x = ~LONGITUDE, y = ~LATITUDE, type = "scatter", name = "Real location") %>%
+#     add_trace(Lat_Long_Diff, y = ~LAT.SVM, name = "SVM prediction")%>%
+#     add_trace(Lat_Long_Diff,y = ~LAT.RANGER,name = "Ranger prediction") %>%
+#     add_trace(Lat_Long_Diff, x = ~LONG.KNN, name = "KNN prediction") %>%
+#     layout(title = "Predicted latitude")
+# 
+#   
+# #DF to plot latitude errors
+# Diff.lat.knn<- testSet$LATITUDE - knn_lat_pred
+# Diff.lat.Ranger <- testSet$LATITUDE - ranger_lat_pred$predictions 
+# Diff.lat.svm <- testSet$LATITUDE - svm_lat_pred
+#   
+# Z <- data.frame(v1=Diff.lat.knn, v2=Diff.lat.Ranger, v3=Diff.lat.svm)
+# colnames(Z) <- c("KNN","RANGER", "SVM")
+# Z<-melt(Z)
+#   
+# #Errors latitude 
+#   ggplot(Z,aes(x=value,fill=variable))  +
+#     labs(fill="") +
+#     geom_density(alpha=0.2) +
+#     ggtitle("Error distribution latitude") +
+#     theme_void()
+#   
+#   
+# ###################################################################### LONGITUDE ERRORS ####  
+# #Only longitude
+#   plot_ly(Lat_Long_Diff, x = ~LONGITUDE, y = ~LATITUDE, type = "scatter", name = "Real location") %>%
+#     add_trace(Lat_Long_Diff, x = ~LONG.SVM, name = "SVM prediction") %>%
+#     add_trace(Lat_Long_Diff, x = ~LONG.KNN, name = "KNN prediction") %>%
+#     add_trace(Lat_Long_Diff,x = ~LONG.RANGER,name = "Ranger prediction")%>%
+#     layout(title = "Predicted longitude")
+#   
+# #DF to plot longitude errors
+# Diff.long.knn    <- testSet$LONGITUDE - knn_long_pred
+# Diff.long.Ranger <- testSet$LONGITUDE - ranger_long_pred$predictions 
+# Diff.long.svm    <- testSet$LONGITUDE - svm_long_pred 
+# 
+# mean(Diff.long.knn)
+# mean(Diff.long.Ranger)
+# mean(Diff.long.svm )
+# mean(abs(Diff.long.knn))
+# 
+# G <- data.frame(v1=Diff.long.knn, v2=Diff.long.Ranger, v3=Diff.long.svm )
+# colnames(G) <- c("KNN","RANGER","SVM")
+# G<-melt(G)
+# 
+# H <- data.frame(v1=Diff.long.Ranger, v2=Diff.long.svm)
+# colnames(H) <- c("RANGER","SVM")
+# H <-melt(H)
+# 
+# # Plot errors longitude
+#   ggplot(H,aes(x=value,fill=variable))  +
+#     labs(fill="") +
+#     geom_density(alpha=0.2) +
+#     ggtitle("Error distribution longitude") +
+#     theme_void()
 
-  
-#DF to plot latitude errors
-Diff.lat.knn<- testSet$LATITUDE - knn_lat_pred
-Diff.lat.Ranger <- testSet$LATITUDE - ranger_lat_pred$predictions 
-Diff.lat.svm <- testSet$LATITUDE - svm_lat_pred
-  
-Z <- data.frame(v1=Diff.lat.knn, v2=Diff.lat.Ranger, v3=Diff.lat.svm)
-colnames(Z) <- c("KNN","RANGER", "SVM")
-Z<-melt(Z)
-  
-#Errors latitude 
-  ggplot(Z,aes(x=value,fill=variable))  +
-    labs(fill="") +
-    geom_density(alpha=0.2) +
-    ggtitle("Error distribution latitude") +
-    theme_void()
-  
-  
-###################################################################### LONGITUDE ERRORS ####  
-#Only longitude
-  plot_ly(Lat_Long_Diff, x = ~LONGITUDE, y = ~LATITUDE, type = "scatter", name = "Real location") %>%
-    add_trace(Lat_Long_Diff, x = ~LONG.SVM, name = "SVM prediction") %>%
-    add_trace(Lat_Long_Diff, x = ~LONG.KNN, name = "KNN prediction") %>%
-    add_trace(Lat_Long_Diff,x = ~LONG.RANGER,name = "Ranger prediction")%>%
-    layout(title = "Predicted longitude")
-  
-#DF to plot longitude errors
-Diff.long.knn    <- testSet$LONGITUDE - knn_long_pred
-Diff.long.Ranger <- testSet$LONGITUDE - ranger_long_pred$predictions 
-Diff.long.svm    <- testSet$LONGITUDE - svm_long_pred 
-
-mean(Diff.long.knn)
-mean(Diff.long.Ranger)
-mean(Diff.long.svm )
-mean(abs(Diff.long.knn))
-
-G <- data.frame(v1=Diff.long.knn, v2=Diff.long.Ranger, v3=Diff.long.svm )
-colnames(G) <- c("KNN","RANGER","SVM")
-G<-melt(G)
-
-H <- data.frame(v1=Diff.long.Ranger, v2=Diff.long.svm)
-colnames(H) <- c("RANGER","SVM")
-H <-melt(H)
-
-# Plot errors longitude
-  ggplot(H,aes(x=value,fill=variable))  +
-    labs(fill="") +
-    geom_density(alpha=0.2) +
-    ggtitle("Error distribution longitude") +
-    theme_void()
-  
-
-
-  
+#### TO DO: Emma, you were re-using a lot of pieces of code in your script. 
+#### Try to put repetitive process inside functions in order to clean the
+#### code and making easier to mantain.
+####
+#### Error analysis: It has been quite poor. One of the objectives of this
+#### task was to go beyond the error metrics. Where each model is making 
+#### misclassifications for Building and Floor? Are all the models making
+#### mistakes in the same regions? Try to use plotly in order to make scatter
+#### plots color coded by model and error.
+#### In case of regression, compute the Ecluidian error in each location 
+#### and use a plotly bubble plot in order to see where each model is making
+#### bigger mistakes. Code the model by color. Can you see areas in which 
+#### all the models makes big mistakes? If so, what this is telling you?
